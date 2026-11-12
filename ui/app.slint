@@ -266,18 +266,17 @@ export component AppWindow inherits Window {
         HorizontalLayout {
             spacing: 11px;
             Image { source: @image-url("../assets/mark.svg"); width: 38px; height: 38px; }
-            VerticalLayout {
-                spacing: 1px;
+            PixelText {
+                text: "FFlume";
+                font-size: 25px;
                 horizontal-stretch: 1;
-                PixelText { text: "FFlume"; font-size: 25px; }
-                Detail { text: "Media, made simple."; font-size: 12px; }
+                vertical-alignment: center;
             }
             if root.active-tool != "" : Button {
                 text: "Back to tools";
                 enabled: !root.locked;
                 clicked => { root.back-to-tools(); }
             }
-
         }
 
         workflow := ScrollView {
