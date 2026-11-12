@@ -1,0 +1,272 @@
+import { ComboBox, LineEdit } from "controls.slint";
+import { Theme, Card, Caption, Detail, PixelText, ActionTile, Button } from "components.slint";
+
+export struct ToolCardData {
+    id: string,
+    title: string,
+    description: string,
+    icon-path: string,
+    status: string,
+}
+
+export struct ToolRow {
+    first: ToolCardData,
+    second: ToolCardData,
+}
+
+export struct ToolSection {
+    title: string,
+    rows: [ToolRow],
+}
+
+component ToolCard inherits Card {
+    in property <ToolCardData> tool;
+    in property <bool> locked;
+    callback chosen();
+    private property <bool> available: tool.id != "" && tool.status == "" && !locked;
+
+    horizontal-stretch: 1;
+    min-height: tool.status == "" ? 70px : 88px;
+    background: available && (mouse.has-hover || keyboard.has-focus) ? Theme.elevated : Theme.surface;
+    border-color: available && (mouse.has-hover || keyboard.has-focus) ? Theme.accent : Theme.border;
+    accessible-role: button;
+    accessible-label: tool.title;
+    accessible-description: tool.description + (tool.status == "" ? "" : " · " + tool.status);
+    accessible-enabled: available;
+    accessible-action-default => { if (root.available) { root.chosen(); } }
+    forward-focus: keyboard;
+
+    HorizontalLayout {
+        padding: 12px;
+        spacing: 10px;
+        Rectangle {
+            width: 32px;
+            height: 32px;
+            border-width: 1px;
+            border-color: Theme.border;
+            background: Theme.elevated;
+            Path {
+                x: 6px;
+                y: 6px;
+                width: 20px;
+                height: 20px;
+                viewbox-width: 24;
+                viewbox-height: 24;
+                commands: root.tool.icon-path;
+                stroke: root.tool.status == "" ? Theme.accent : Theme.muted;
+                stroke-width: 1.7px;
+                fill: transparent;
+            }
+        }
+        VerticalLayout {
+            spacing: 3px;
+            horizontal-stretch: 1;
+            PixelText {
+                text: root.tool.title;
+                color: Theme.text;
+                font-size: 15px;
+                wrap: word-wrap;
+                accessible-role: none;
+            }
+            Detail { text: root.tool.description; font-size: 12px; accessible-role: none; }
+            if root.tool.status != "" : PixelText {
+                text: root.tool.status;
+                color: Theme.accent-hover;
+                font-size: 11px;
+                wrap: word-wrap;
+                accessible-role: none;
+            }
+        }
+    }
+
+    keyboard := FocusScope {
+        enabled: root.available;
+        key-pressed(event) => {
+            if (event.text == Key.Return || event.text == Key.Space) {
+                root.chosen();
+                return accept;
+            }
+            return reject;
+        }
+    }
+    mouse := TouchArea {
+        enabled: root.available;
+        mouse-cursor: pointer;
+        clicked => { keyboard.focus(); root.chosen(); }
+    }
+}
+
+export component ToolsHome inherits VerticalLayout {
+    in property <string> file-name;
+    in property <string> file-details;
+    in property <string> file-kind;
+    in property <bool> pdf-setup-available;
+    in property <bool> pdf-installing;
+    callback install-pdf();
+    callback check-pdf();
+    in property <bool> can-import;
+    in property <bool> file-drops;
+    in property <bool> drag-hover;
+    in property <bool> locked;
+    in property <[ToolSection]> sections;
+    in property <[string]> categories;
+    in-out property <string> query;
+    in-out property <int> category-index;
+    in-out property <bool> suggested-only;
+    callback browse();
+    callback remove();
+    callback choose(string);
+
+    spacing: 14px;
+
+    VerticalLayout {
+        spacing: 4px;
+        PixelText {
+            text: "Let your media flow.";
+            color: Theme.text;
+            font-size: 28px;
+            wrap: word-wrap;
+        }
+        Detail { text: "Convert, compress, and create with ease."; font-size: 14px; }
+    }
+
+    Card {
+        background: Theme.elevated;
+        border-color: root.drag-hover ? Theme.accent : Theme.border;
+        Rectangle {
+            x: 0px;
+            y: 0px;
+            width: 3px;
+            height: parent.height;
+            background: Theme.accent;
+        }
+        HorizontalLayout {
+            padding: 12px;
+            padding-left: 16px;
+            spacing: 10px;
+            VerticalLayout {
+                spacing: 4px;
+                horizontal-stretch: 1;
+                if root.file-name != "" : Caption { text: "Your file"; }
+                Text {
+                    font-family: root.file-name == "" ? Theme.display-font : Theme.body-font;
+                    text: root.file-name == "" ? (root.file-drops ? "Drop a file to get started" : "Open a file to get started") : root.file-name;
+                    color: Theme.text;
+                    font-size: 15px;
+                    overflow: elide;
+                }
+                Detail {
+                    font-family: root.file-name == "" ? Theme.body-font : Theme.mono-font;
+                    text: root.file-name == "" ? "Or browse files on your device." : root.file-details;
+                    font-size: 12px;
+                }
+            }
+            if root.file-name != "" : Button {
+                text: "Remove";
+                enabled: !root.locked;
+                clicked => { root.remove(); }
+            }
+            ActionTile {
+                label: root.file-name == "" ? "Browse files" : "Replace file";
+                primary: true;
+                enabled: root.can-import;
+                horizontal-stretch: 0;
+                clicked => { root.browse(); }
+            }
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 10px;
+        LineEdit {
+            text <=> root.query;
+            placeholder-text: "Find a tool...";
+            accessible-label: "Search tools";
+            horizontal-stretch: 1;
+        }
+        if root.query != "" : Button {
+            text: "Clear search";
+            clicked => { root.query = ""; }
+        }
+        ComboBox {
+            model: root.categories;
+            current-index <=> root.category-index;
+            accessible-label: "Tool category";
+            width: 156px;
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 8px;
+        VerticalLayout {
+            spacing: 4px;
+            horizontal-stretch: 1;
+            PixelText {
+                font-size: 18px;
+                wrap: word-wrap;
+                text: !root.suggested-only ? (root.file-name == "" ? "Explore tools" : "Explore all tools")
+                    : root.file-kind == "Image" ? "Tools for your image"
+                    : root.file-kind == "Video" ? "Tools for your video" : "Tools for your audio";
+            }
+            if root.suggested-only : Detail {
+                text: root.file-kind == "Image" ? "Here's what you can do with this image."
+                    : root.file-kind == "Video" ? "Choose how you'd like to work with your video."
+                    : "Fine-tune, convert, or extract what you need.";
+            }
+        }
+        if root.suggested-only : Button {
+            text: "Explore all tools";
+            clicked => { root.suggested-only = false; root.query = ""; root.category-index = 0; }
+        }
+    }
+
+    if root.pdf-setup-available : Card {
+        VerticalLayout {
+            padding: 14px;
+            spacing: 8px;
+            Caption { text: "Set up PDF export"; color: Theme.text; }
+            Detail { text: "Install Poppler to turn PDF pages into images."; }
+            HorizontalLayout {
+                spacing: 8px;
+                Button { text: root.pdf-installing ? "Installing Poppler…" : "Install Poppler"; enabled: !root.locked; clicked => { root.install-pdf(); } }
+                Button { text: "Check again"; enabled: !root.locked; clicked => { root.check-pdf(); } }
+                Rectangle { horizontal-stretch: 1; }
+            }
+        }
+    }
+
+    if root.sections.length == 0 && !root.pdf-setup-available : Card {
+        VerticalLayout {
+            padding: 14px;
+            spacing: 5px;
+            Caption { text: "No matching tools"; color: Theme.text; }
+            Detail {
+                text: "Try a different keyword or category.";
+            }
+        }
+    }
+
+    for section in root.sections : VerticalLayout {
+        spacing: 10px;
+        PixelText { text: section.title; font-size: 16px; }
+        for row in section.rows : GridLayout {
+            spacing: 10px;
+            ToolCard {
+                row: 0;
+                col: 0;
+                width: root.width < 500px ? root.width : (root.width - 10px) / 2;
+                tool: row.first;
+                locked: root.locked;
+                chosen => { root.choose(row.first.id); }
+            }
+            if row.second.id != "" : ToolCard {
+                row: root.width < 500px ? 1 : 0;
+                col: root.width < 500px ? 0 : 1;
+                width: root.width < 500px ? root.width : (root.width - 10px) / 2;
+                tool: row.second;
+                locked: root.locked;
+                chosen => { root.choose(row.second.id); }
+            }
+        }
+    }
+}

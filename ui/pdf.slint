@@ -1,0 +1,124 @@
+import { Card, Detail, Readout, PixelText, ActionTile, Button, Theme } from "components.slint";
+import { LineEdit, ComboBox } from "controls.slint";
+
+export component PdfPanel inherits VerticalLayout {
+    in property <bool> ready;
+    in property <bool> checked;
+    in property <bool> installing;
+    in property <bool> locked;
+    in property <bool> output-ready;
+    in property <string> result-summary;
+    in property <string> file-name;
+    in property <string> page-count;
+    in property <string> preview-label;
+    in property <bool> can-previous;
+    in property <bool> can-next;
+    in property <image> preview-image;
+    in-out property <string> selection;
+    in-out property <int> format-index;
+    callback install();
+    callback check();
+    callback browse();
+    callback preview();
+    callback previous();
+    callback next();
+    callback export-pages();
+    callback open-folder();
+    callback open-export();
+
+    spacing: 14px;
+    if !root.ready : Card {
+        VerticalLayout {
+            padding: 16px;
+            spacing: 10px;
+            PixelText { text: root.installing ? "Installing Poppler…" : root.checked ? "Set up Poppler" : "Checking for Poppler…"; font-size: 16px; }
+            Detail { text: "Install Poppler to preview PDF pages and save them as images."; }
+            if root.checked : HorizontalLayout {
+                spacing: 8px;
+                ActionTile { label: "Install Poppler"; primary: true; horizontal-stretch: 0; enabled: !root.locked; clicked => { root.install(); } }
+                Button { text: "Check again"; enabled: !root.locked; clicked => { root.check(); } }
+                Rectangle { horizontal-stretch: 1; }
+            }
+        }
+    }
+    if root.ready : Card {
+        VerticalLayout {
+            padding: 16px;
+            spacing: 8px;
+            PixelText { text: root.file-name == "" ? "Open a PDF" : "Your file"; font-size: 16px; }
+            if root.file-name != "" : Text {
+                text: root.file-name;
+                overflow: elide;
+                color: Theme.text;
+            }
+            if root.file-name != "" : Readout { text: root.page-count + (root.page-count == "1" ? " page" : " pages"); }
+            if root.file-name == "" : Detail { text: "Choose a PDF to preview its pages."; }
+            HorizontalLayout {
+                Rectangle { horizontal-stretch: 1; }
+                ActionTile { label: root.file-name == "" ? "Open PDF" : "Replace file"; primary: true; horizontal-stretch: 0; enabled: !root.locked; clicked => { root.browse(); } }
+            }
+        }
+    }
+    if root.ready && root.file-name != "" : Card {
+        VerticalLayout {
+            padding: 16px;
+            spacing: 10px;
+            HorizontalLayout {
+                spacing: 8px;
+                PixelText { text: "Pages to export"; font-size: 15px; vertical-alignment: center; horizontal-stretch: 1; }
+                if root.page-count != "1" : Button {
+                    text: "Select all pages";
+                    enabled: !root.locked;
+                    clicked => { root.selection = "1-" + root.page-count; }
+                }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                LineEdit {
+                    text <=> root.selection;
+                    placeholder-text: "1, 3-5";
+                    accessible-label: "Page numbers or ranges";
+                    enabled: !root.locked;
+                }
+                Button { text: "Preview selection"; enabled: !root.locked; clicked => { root.preview(); } }
+            }
+            Detail { text: "Enter page numbers or ranges, like 1, 3-5."; }
+            HorizontalLayout {
+                spacing: 8px;
+                ComboBox { model: ["PNG", "JPEG"]; current-index <=> root.format-index; accessible-label: "Image format"; enabled: !root.locked; }
+                ActionTile { label: "Export images"; primary: true; horizontal-stretch: 0; enabled: !root.locked; clicked => { root.export-pages(); } }
+            }
+            if root.output-ready : VerticalLayout {
+                spacing: 8px;
+                PixelText { text: "Export result"; font-size: 15px; }
+                Readout { text: root.result-summary; color: Theme.accent; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Button { text: "Open file"; enabled: !root.locked; clicked => { root.open-export(); } }
+                    Button { text: "Show in folder"; enabled: !root.locked; clicked => { root.open-folder(); } }
+                    Button { text: "Choose another file"; enabled: !root.locked; clicked => { root.browse(); } }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+            }
+        }
+    }
+    if root.ready && root.preview-label != "" : Card {
+        VerticalLayout {
+            padding: 16px;
+            spacing: 8px;
+            HorizontalLayout {
+                spacing: 8px;
+                PixelText { text: root.preview-label; font-size: 15px; vertical-alignment: center; horizontal-stretch: 1; }
+                Button { text: "Previous"; accessible-label: "Previous page"; enabled: root.can-previous && !root.locked; clicked => { root.previous(); } }
+                Button { text: "Next"; accessible-label: "Next page"; enabled: root.can-next && !root.locked; clicked => { root.next(); } }
+            }
+            Image {
+                source: root.preview-image;
+                image-fit: contain;
+                height: 360px;
+                accessible-role: image;
+                accessible-label: root.preview-label + " preview";
+            }
+        }
+    }
+}

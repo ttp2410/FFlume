@@ -1,0 +1,333 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme, PixelText } from "components.slint";
+
+component ControlFrame inherits Rectangle {
+    in property <bool> enabled: true;
+    in property <bool> focused;
+    in property <bool> hovered;
+    background: !enabled ? Theme.background : hovered || focused ? Theme.elevated : Theme.surface;
+    border-width: 1px;
+    border-color: enabled && (focused || hovered) ? Theme.accent : Theme.border;
+}
+
+export component LineEdit inherits ControlFrame {
+    in-out property <string> text <=> input.text;
+    in property <string> placeholder-text;
+    min-width: 64px;
+    min-height: 34px;
+    vertical-stretch: 0;
+    horizontal-stretch: 1;
+    focused: input.has-focus;
+    forward-focus: input;
+    accessible-role: text-input;
+    accessible-enabled: root.enabled;
+    accessible-value <=> text;
+    accessible-placeholder-text: placeholder-text;
+    accessible-action-set-value(value) => { if (root.enabled) { root.text = value; } }
+    accessible-action-set-selection-offsets(anchor, focus) => { input.set-selection-offsets(anchor, focus); }
+
+    Rectangle {
+        x: 10px;
+        width: parent.width - 20px;
+        height: parent.height;
+        clip: true;
+
+        Text {
+            width: parent.width;
+            height: parent.height;
+            text: root.text == "" && input.preedit-text == "" ? root.placeholder-text : "";
+            vertical-alignment: center;
+            overflow: elide;
+            color: Theme.muted;
+            accessible-role: none;
+        }
+
+        input := TextInput {
+            property <length> offset;
+            x: clamp(offset, min(0px, parent.width - self.width), 0px);
+            width: max(parent.width, self.preferred-width + 2px);
+            height: parent.height;
+            enabled: root.enabled;
+            single-line: true;
+            color: root.enabled ? Theme.text : Theme.muted;
+            vertical-alignment: center;
+            selection-background-color: Theme.accent;
+            selection-foreground-color: Theme.background;
+            accessible-role: none;
+            cursor-position-changed(position) => {
+                if (position.x + self.x < 0px) {
+                    self.offset = -position.x;
+                } else if (position.x + self.x > parent.width - 2px) {
+                    self.offset = parent.width - 2px - position.x;
+                }
+            }
+        }
+    }
+    ContextMenuArea {
+        enabled: root.enabled;
+        Menu {
+            MenuItem { title: "Undo"; activated => { input.undo(); } }
+            MenuItem { title: "Redo"; activated => { input.redo(); } }
+            MenuSeparator {}
+            MenuItem { title: "Cut"; enabled: root.text != ""; activated => { input.cut(); } }
+            MenuItem { title: "Copy"; enabled: root.text != ""; activated => { input.copy(); } }
+            MenuItem { title: "Paste"; activated => { input.paste(); } }
+            MenuItem { title: "Select All"; enabled: root.text != ""; activated => { input.select-all(); } }
+        }
+    }
+}
+
+export component ComboBox inherits ControlFrame {
+    in property <[string]> model;
+    in-out property <int> current-index;
+    callback selected(string);
+    private property <string> current-value: model[current-index];
+    private property <bool> popup-focused;
+    min-width: 132px;
+    min-height: 34px;
+    horizontal-stretch: 1;
+    vertical-stretch: 0;
+    focused: keys.has-focus || root.popup-focused;
+    hovered: mouse.has-hover;
+    forward-focus: keys;
+    accessible-role: combobox;
+    accessible-enabled: root.enabled;
+    accessible-value: current-value;
+    accessible-expandable: true;
+    accessible-expanded: root.popup-focused;
+    accessible-action-expand => { root.open(); }
+
+    function open() {
+        if (root.enabled && root.model.length > 0) {
+            menu.show();
+        }
+    }
+    function select(index: int) {
+        if (root.enabled && index >= 0 && index < root.model.length) {
+            root.current-index = index;
+            root.selected(root.model[index]);
+        }
+    }
+    function move-selection(delta: int) {
+        root.select(clamp(root.current-index + delta, 0, root.model.length - 1));
+    }
+    function close() {
+        menu.close();
+        keys.focus();
+    }
+
+    PixelText {
+        x: 10px;
+        width: parent.width - 36px;
+        height: parent.height;
+        text: root.current-value;
+        font-size: 13px;
+        vertical-alignment: center;
+        overflow: elide;
+        color: root.enabled ? Theme.text : Theme.muted;
+        accessible-role: none;
+    }
+    Path {
+        x: parent.width - 22px;
+        y: (parent.height - self.height) / 2;
+        width: 10px;
+        height: 8px;
+        viewbox-width: 10;
+        viewbox-height: 8;
+        commands: "M 1 2 H 3 V 4 H 5 V 6 H 7 V 4 H 9 V 2";
+        stroke: root.enabled ? Theme.accent : Theme.muted;
+        stroke-width: 1px;
+    }
+    keys := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if (event.text == Key.Space || event.text == Key.Return) { root.open(); return accept; }
+            if (event.text == Key.UpArrow) { root.move-selection(-1); return accept; }
+            if (event.text == Key.DownArrow) { root.move-selection(1); return accept; }
+            return reject;
+        }
+    }
+    mouse := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { keys.focus(); root.open(); }
+    }
+    menu := PopupWindow {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: min(6, root.model.length) * 34px + 2px;
+        close-policy: close-on-click-outside;
+        forward-focus: menu-keys;
+
+        menu-keys := FocusScope {
+            focus-changed-event => { root.popup-focused = self.has-focus; }
+            key-pressed(event) => {
+                if (event.text == Key.Escape || event.text == Key.Return || event.text == Key.Space) { root.close(); return accept; }
+                if (event.text == Key.UpArrow) { root.move-selection(-1); return accept; }
+                if (event.text == Key.DownArrow) { root.move-selection(1); return accept; }
+                return reject;
+            }
+
+            Rectangle {
+                background: Theme.surface;
+                border-width: 1px;
+                border-color: Theme.accent;
+                ScrollView {
+                    x: 1px;
+                    y: 1px;
+                    width: parent.width - 2px;
+                    height: parent.height - 2px;
+                    content-width: self.visible-width;
+                    content-height: root.model.length * 34px;
+                    content-y: -clamp(root.current-index - 5, 0, max(0, root.model.length - 6)) * 34px;
+                    horizontal-scrollbar-policy: always-off;
+                    VerticalLayout {
+                        width: parent.width;
+                        height: root.model.length * 34px;
+                        for option[index] in root.model : Rectangle {
+                            height: 34px;
+                            background: index == root.current-index || item-mouse.has-hover ? Theme.elevated : Theme.surface;
+                            accessible-role: list-item;
+                            accessible-label: option;
+                            accessible-action-default => { root.select(index); root.close(); }
+                            PixelText {
+                                x: 9px;
+                                width: parent.width - 18px;
+                                height: parent.height;
+                                text: option;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                                overflow: elide;
+                                color: index == root.current-index ? Theme.accent : Theme.text;
+                                accessible-role: none;
+                            }
+                            item-mouse := TouchArea { clicked => { root.select(index); root.close(); } }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component CheckBox inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    in-out property <bool> checked;
+    min-height: 28px;
+    vertical-stretch: 0;
+    forward-focus: keys;
+    accessible-role: checkbox;
+    accessible-label: text;
+    accessible-enabled: root.enabled;
+    accessible-checkable: true;
+    accessible-checked: checked;
+    accessible-action-default => { root.toggle(); }
+    function toggle() { if (root.enabled) { root.checked = !root.checked; } }
+
+    HorizontalLayout {
+        spacing: 9px;
+        ControlFrame {
+            enabled: root.enabled;
+            focused: keys.has-focus;
+            hovered: mouse.has-hover;
+            width: 18px;
+            height: 18px;
+            Path {
+                width: 12px;
+                height: 12px;
+                viewbox-width: 12;
+                viewbox-height: 12;
+                visible: root.checked;
+                commands: "M 1 6 H 3 V 8 H 5 V 6 H 7 V 4 H 9 V 2 H 11";
+                stroke-width: 2px;
+                stroke: root.enabled ? Theme.accent : Theme.muted;
+            }
+        }
+        Text {
+            text: root.text;
+            color: root.enabled ? Theme.text : Theme.muted;
+            vertical-alignment: center;
+            wrap: word-wrap;
+            horizontal-stretch: 1;
+            accessible-role: none;
+        }
+    }
+    keys := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if (event.text == Key.Space || event.text == Key.Return) { root.toggle(); return accept; }
+            return reject;
+        }
+    }
+    mouse := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { keys.focus(); root.toggle(); }
+    }
+}
+
+export component Slider inherits Rectangle {
+    in property <bool> enabled: true;
+    in property <float> minimum;
+    in property <float> maximum: 100;
+    in property <float> step: 1;
+    in-out property <float> value;
+    callback adjusted();
+    private property <float> fraction: clamp((value - minimum) / max(0.0001, maximum - minimum), 0, 1);
+    min-height: 24px;
+    min-width: 40px;
+    horizontal-stretch: 1;
+    vertical-stretch: 0;
+    forward-focus: keys;
+    accessible-role: slider;
+    accessible-enabled: root.enabled;
+    accessible-value: value;
+    accessible-value-minimum: minimum;
+    accessible-value-maximum: maximum;
+    accessible-value-step: step;
+    accessible-action-increment => { root.set-value(root.value + root.step); }
+    accessible-action-decrement => { root.set-value(root.value - root.step); }
+    accessible-action-set-value(v) => { if (v.is-float()) { root.set-value(v.to-float()); } }
+    function set-value(next: float) {
+        if (root.enabled) {
+            root.value = clamp(root.minimum + round((next - root.minimum) / root.step) * root.step, root.minimum, root.maximum);
+            root.adjusted();
+        }
+    }
+    function set-at(x: length) {
+        root.set-value(root.minimum + (x - 7px) / max(1px, root.width - 14px) * (root.maximum - root.minimum));
+    }
+    Rectangle { x: 7px; width: parent.width - 14px; height: 4px; background: Theme.border; }
+    Rectangle { x: 7px; width: (parent.width - 14px) * root.fraction; height: 4px; background: root.enabled ? Theme.accent : Theme.muted; }
+    Rectangle {
+        x: (parent.width - self.width) * root.fraction;
+        width: 14px;
+        height: 14px;
+        background: !root.enabled ? Theme.border : mouse.has-hover || keys.has-focus ? Theme.accent-hover : Theme.accent;
+        border-width: 1px;
+        border-color: keys.has-focus ? Theme.text : Theme.border;
+    }
+    keys := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if (event.text == Key.LeftArrow || event.text == Key.DownArrow) { root.set-value(root.value - root.step); return accept; }
+            if (event.text == Key.RightArrow || event.text == Key.UpArrow) { root.set-value(root.value + root.step); return accept; }
+            if (event.text == Key.Home) { root.set-value(root.minimum); return accept; }
+            if (event.text == Key.End) { root.set-value(root.maximum); return accept; }
+            return reject;
+        }
+    }
+    mouse := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        pointer-event(event) => {
+            if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                keys.focus();
+                root.set-at(self.mouse-x);
+            }
+        }
+        moved => { if (self.pressed) { root.set-at(self.mouse-x); } }
+    }
+}

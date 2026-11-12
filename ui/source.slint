@@ -1,0 +1,98 @@
+import { Theme, Card, Detail, Readout, PixelText, ActionTile, Button } from "components.slint";
+
+export component SourcePanel inherits Card {
+    in property <string> profile;
+    in property <string> file-name;
+    in property <[string]> facts;
+    in property <bool> enabled;
+    in property <bool> drag-hover;
+    in property <bool> can-drop;
+    in property <bool> locked;
+    callback browse();
+    callback remove();
+
+    private property <bool> empty: file-name == "";
+    private property <string> browse-label: profile == "Image" ? "Choose image" :
+        profile == "Audio" ? "Choose audio" : profile == "Video" ? "Choose video" : "Browse files";
+    private property <string> guidance: profile == "Image" ? "Choose an image to get started." :
+        profile == "Audio" ? "Choose an audio file to get started." :
+        profile == "Video" ? "Choose a video to get started." :
+        "Open an image, audio file or video to inspect its tracks and format.";
+
+    background: Theme.surface;
+    border-color: drag-hover ? Theme.accent : Theme.border;
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+
+        HorizontalLayout {
+            spacing: 14px;
+            Rectangle {
+                width: 52px;
+                height: 52px;
+                background: Theme.elevated;
+                border-width: 1px;
+                border-color: Theme.border;
+                Path {
+                    width: 30px;
+                    height: 30px;
+                    viewbox-width: 24;
+                    viewbox-height: 24;
+                    stroke: Theme.accent;
+                    stroke-width: 1.5px;
+                    commands: root.profile == "Image" ? "M 2 4 H 22 V 20 H 2 Z M 2 16 L 8 10 L 13 15 L 17 11 L 22 16 M 16 7 H 19" :
+                        root.profile == "Audio" ? "M 2 10 V 14 M 6 7 V 17 M 10 3 V 21 M 14 6 V 18 M 18 9 V 15 M 22 11 V 13" :
+                        root.profile == "Video" ? "M 2 4 H 22 V 20 H 2 Z M 9 8 L 16 12 L 9 16 Z M 5 4 V 20 M 19 4 V 20" :
+                        "M 3 4 H 15 V 17 H 3 Z M 15 8 H 20 V 21 H 8 V 17 M 6 8 H 12 M 6 12 H 12";
+                }
+            }
+            VerticalLayout {
+                spacing: 4px;
+                horizontal-stretch: 1;
+                PixelText {
+                    text: root.empty ? (root.profile == "Media" ? "Inspect a media file" : root.profile == "Image" ? "Add an image" : root.profile == "Audio" ? "Add an audio file" : "Add a video") : "Your file";
+                    font-size: 16px;
+                    wrap: word-wrap;
+                }
+                if root.empty : Detail { text: root.guidance; }
+                if !root.empty : Text {
+                    text: root.file-name;
+                    color: Theme.text;
+                    font-size: 15px;
+                    overflow: elide;
+                }
+            }
+        }
+
+        if !root.empty : Readout {
+            text: root.facts.length > 0 ? root.facts[0] : "";
+        }
+
+        if !root.empty && root.facts.length > 1 && root.facts[1] != "" : Readout {
+            text: root.facts[1];
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            if root.empty && root.can-drop : Detail {
+                text: "You can also drop a file here.";
+                vertical-alignment: center;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            if !root.empty : Button {
+                text: "Remove";
+                enabled: !root.locked;
+                clicked => { root.remove(); }
+            }
+            ActionTile {
+                label: root.empty ? root.browse-label : "Replace file";
+                primary: root.empty;
+                compact: !root.empty;
+                enabled: root.enabled;
+                horizontal-stretch: 0;
+                clicked => { root.browse(); }
+            }
+        }
+    }
+}

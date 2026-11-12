@@ -1,0 +1,102 @@
+export global Theme {
+    out property <color> background: #090D13;
+    out property <color> surface: #111A24;
+    out property <color> border: #34485B;
+    out property <color> text: #F1F5F9;
+    out property <color> muted: #91A4B8;
+    out property <color> accent: #38BDF8;
+    out property <color> elevated: #182431;
+    out property <color> accent-hover: #7DD3FC;
+    // Slint resolves the static Square face by its typographic family name.
+    out property <string> display-font: "Geist Pixel";
+    out property <string> body-font: "Geist";
+    out property <string> mono-font: "Geist Mono";
+}
+
+export component Card inherits Rectangle {
+    background: Theme.surface;
+    border-color: Theme.border;
+    border-width: 1px;
+}
+
+export component PixelText inherits Text {
+    font-family: Theme.display-font;
+    font-weight: 400;
+    color: Theme.text;
+}
+
+export component Caption inherits PixelText {
+    color: Theme.muted;
+    font-size: 13px;
+    vertical-alignment: center;
+}
+
+export component Detail inherits Text {
+    font-family: Theme.body-font;
+    color: Theme.muted;
+    font-size: 13px;
+    wrap: word-wrap;
+}
+
+export component Readout inherits Detail {
+    font-family: Theme.mono-font;
+    font-size: 12px;
+}
+
+export component ActionTile inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected;
+    in property <bool> enabled: true;
+    in property <bool> primary;
+    in property <bool> compact;
+    callback clicked();
+
+    min-width: compact || primary ? max(56px, caption.preferred-width + 20px) : 108px;
+    min-height: compact ? 34px : primary ? 40px : 47px;
+    vertical-stretch: 0;
+    border-width: 1px;
+    background: !enabled ? Theme.surface : primary ? (mouse.has-hover ? Theme.accent-hover : Theme.accent) : selected ? Theme.elevated : mouse.has-hover ? Theme.elevated : Theme.surface;
+    border-color: keys.has-focus ? Theme.text : enabled && (selected || primary) ? Theme.accent : Theme.border;
+    forward-focus: keys;
+    accessible-role: button;
+    accessible-label: label;
+    accessible-enabled: enabled;
+    accessible-checkable: !primary && !compact;
+    accessible-checked: selected;
+    accessible-action-default => { if (root.enabled) { root.clicked(); } }
+
+    caption := PixelText {
+        x: 8px;
+        width: parent.width - 16px;
+        height: parent.height;
+        text: root.label;
+        color: !root.enabled ? Theme.muted : root.primary ? Theme.background : root.selected ? Theme.accent : Theme.text;
+        font-size: 13px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        wrap: root.compact || root.primary ? no-wrap : word-wrap;
+        accessible-role: none;
+    }
+    keys := FocusScope {
+        width: 0px;
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if (event.text == Key.Space || event.text == Key.Return) {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+    mouse := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { keys.focus(); root.clicked(); }
+    }
+}
+
+export component Button inherits ActionTile {
+    in property <string> text <=> root.label;
+    compact: true;
+    horizontal-stretch: 0;
+}

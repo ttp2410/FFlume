@@ -1,0 +1,111 @@
+import { Theme } from "components.slint";
+
+export component CompareView inherits Rectangle {
+    in property <image> original;
+    in property <image> processed;
+    in property <bool> compare: true;
+    in property <bool> pixel-detail;
+    in property <float> pixel-scale: 1.0;
+    in-out property <float> divider: 0.5;
+
+    private property <image> reference: compare ? original : processed;
+    private property <float> aspect: max(1, reference.width) / max(1, reference.height);
+    private property <length> canvas-width: min(root.width, root.height * aspect);
+    private property <length> canvas-height: min(root.height, root.width / aspect);
+
+    private property <length> compare-width: root.pixel-detail
+        ? min(root.width, max(root.original.width, root.processed.width) * 1px / max(1, root.pixel-scale))
+        : root.canvas-width;
+    private property <length> compare-left: (root.width - root.compare-width) / 2;
+    private property <length> split-x: root.compare-left + root.compare-width * root.divider;
+
+    background: Theme.background;
+    clip: true;
+    forward-focus: keys;
+
+    function move-divider(delta: float) {
+        root.divider = clamp(root.divider + delta, 0.0, 1.0);
+    }
+
+    keys := FocusScope {
+        enabled: root.compare;
+        key-pressed(event) => {
+            if event.text == Key.LeftArrow { root.move-divider(-0.05); return accept; }
+            if event.text == Key.RightArrow { root.move-divider(0.05); return accept; }
+            if event.text == Key.Home { root.divider = 0.5; return accept; }
+            return reject;
+        }
+    }
+
+    Image {
+        source: root.processed;
+        width: root.pixel-detail ? self.source.width * 1px / max(1, root.pixel-scale) : root.canvas-width;
+        height: root.pixel-detail ? self.source.height * 1px / max(1, root.pixel-scale) : root.canvas-height;
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        image-fit: contain;
+    }
+
+    if root.compare : Rectangle {
+        x: 0;
+        y: 0;
+        width: root.split-x;
+        height: root.height;
+        background: Theme.background;
+        clip: true;
+
+        Image {
+            source: root.original;
+            width: root.pixel-detail ? self.source.width * 1px / max(1, root.pixel-scale) : root.canvas-width;
+            height: root.pixel-detail ? self.source.height * 1px / max(1, root.pixel-scale) : root.canvas-height;
+            x: (root.width - self.width) / 2;
+            y: (root.height - self.height) / 2;
+            image-fit: contain;
+        }
+    }
+
+    if root.compare : Rectangle {
+        x: root.split-x - 1px;
+        width: 2px;
+        height: root.height;
+        background: Theme.accent;
+        Rectangle {
+            x: -10px;
+            y: (parent.height - self.height) / 2;
+            width: 22px;
+            height: 22px;
+            background: keys.has-focus ? Theme.accent-hover : Theme.accent;
+            Text {
+                text: "↔";
+                color: Theme.background;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    if root.compare : TouchArea {
+        accessible-role: slider;
+        accessible-label: "Original and processed comparison divider";
+        accessible-value: root.divider;
+        accessible-value-minimum: 0;
+        accessible-value-maximum: 1;
+        accessible-value-step: 0.05;
+        accessible-action-increment => { root.move-divider(0.05); }
+        accessible-action-decrement => { root.move-divider(-0.05); }
+        accessible-action-set-value(v) => {
+            if v.is-float() { root.divider = clamp(v.to-float(), 0.0, 1.0); }
+        }
+        mouse-cursor: col-resize;
+        function move-divider() {
+            root.divider = clamp((self.mouse-x - root.compare-left) / max(root.compare-width, 1px), 0.0, 1.0);
+        }
+        moved => { if self.pressed { self.move-divider(); } }
+        pointer-event(event) => {
+            if event.kind == PointerEventKind.down && event.button == PointerEventButton.left {
+                keys.focus();
+                self.move-divider();
+            }
+        }
+    }
+}

@@ -1,0 +1,843 @@
+import { ProgressIndicator, ScrollView } from "std-widgets.slint";
+import { CheckBox, ComboBox, LineEdit, Slider } from "controls.slint";
+import "../assets/fonts/GeistPixel-Square.ttf";
+import "../assets/fonts/Geist-Regular.ttf";
+import "../assets/fonts/GeistMono-Regular.ttf";
+
+import { Theme, Card, Caption, Detail, Readout, PixelText, ActionTile, Button } from "components.slint";
+import { ToolsHome, ToolCardData, ToolRow, ToolSection } from "home.slint";
+import { SourcePanel } from "source.slint";
+import { CompareView } from "compare.slint";
+import { PdfPanel } from "pdf.slint";
+export { ToolCardData, ToolRow, ToolSection }
+
+component VersionButton inherits Button {
+    in property <string> probe-version;
+    in property <bool> custom-tool;
+    callback choose-tool();
+    callback reset-tool();
+    accessible-label: root.text + ", show versions";
+    clicked => { versions.show(); }
+
+    versions := PopupWindow {
+        width: 220px;
+        height: root.custom-tool ? 138px : 99px;
+        x: root.width - self.width;
+        y: -self.height - 6px;
+        close-policy: close-on-click-outside;
+        forward-focus: popup-keys;
+
+        popup-keys := FocusScope {
+            key-pressed(event) => {
+                if (event.text == Key.Escape) {
+                    versions.close();
+                    return accept;
+                }
+                return reject;
+            }
+
+            Card {
+                background: Theme.elevated;
+                VerticalLayout {
+                    padding: 10px;
+                    spacing: 5px;
+                    Readout { text: root.text; color: Theme.text; }
+                    Readout { text: "ffprobe " + root.probe-version; }
+                    Button { text: "Choose FFmpeg…"; clicked => { versions.close(); root.choose-tool(); } }
+                    if root.custom-tool : Button {
+                        text: "Use automatic setup";
+                        clicked => { root.reset-tool(); versions.close(); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    in property <bool> pdf-ready;
+    in property <bool> pdf-checked;
+    in property <bool> pdf-installing;
+    in property <bool> pdf-output-ready;
+    in property <string> pdf-result-summary;
+    in property <string> pdf-name;
+    in property <string> pdf-page-count;
+    in property <string> pdf-preview-label;
+    in property <bool> pdf-can-previous;
+    in property <bool> pdf-can-next;
+    in property <image> pdf-image;
+    in-out property <string> pdf-selection;
+    in-out property <int> pdf-format-index;
+    changed pdf-format-index => { root.pdf-format-changed(); }
+    callback pdf-format-changed();
+    callback pdf-install();
+    callback pdf-check();
+    callback pdf-browse();
+    callback pdf-preview();
+    callback pdf-previous();
+    callback pdf-next();
+    callback pdf-export();
+
+    in property <string> active-tool;
+    in property <string> input-hint;
+    in property <string> source-profile: "Media";
+    in property <[string]> source-facts;
+    in property <bool> can-process;
+    in property <bool> compatible-input;
+    private property <string> source-name: compatible-input ? file-name : "";
+    in property <bool> inspector;
+    in property <string> inspection;
+    in property <[ToolSection]> tool-sections;
+    in property <[string]> categories;
+    in-out property <string> search-query;
+    in-out property <int> category-index;
+    in-out property <bool> suggested-only;
+    in property <bool> file-drops;
+    in property <bool> drag-hover;
+    in property <string> file-name;
+    in property <string> file-kind;
+    in property <string> file-details;
+    in property <bool> pdf-setup-available;
+    in property <[string]> actions;
+    in property <[string]> formats;
+    in property <string> action-hint;
+    in property <string> destination;
+    in-out property <string> destination-name;
+    in property <image> preview-original;
+    in property <image> preview-converted;
+    in property <bool> has-image-comparison;
+    in property <bool> has-single-preview;
+    in property <bool> preview-enabled: true;
+    in property <bool> show-timeline;
+    in property <bool> audio-ab;
+    in property <image> detail-original;
+    in property <image> detail-converted;
+    in property <[image]> gif-frames;
+    private property <int> gif-index;
+    private property <bool> gif-playing;
+    private property <bool> pixel-detail: root.detail-requested && root.detail-original.width > 0;
+    changed gif-frames => {
+        root.gif-playing = false;
+        root.gif-index = 0;
+    }
+    Timer {
+        interval: 83ms;
+        running: root.gif-playing && !root.hidden-preview && root.gif-frames.length > 1;
+        triggered => { if root.gif-frames.length > 1 { root.gif-index = mod(root.gif-index + 1, root.gif-frames.length); } }
+    }
+    in property <float> preview-pixel-scale: 1.0;
+    in property <float> seek-limit;
+    in property <string> preview-info;
+    in property <string> preview-state: "Not generated";
+    in property <string> timeline-duration;
+    in-out property <float> seek-time;
+    in-out property <float> divider: 0.5;
+    in-out property <bool> detail-requested;
+    private property <bool> expanded-preview;
+    private property <bool> hidden-preview;
+    changed has-image-comparison => { if root.has-image-comparison { root.hidden-preview = false; } }
+    changed has-single-preview => { if root.has-single-preview { root.hidden-preview = false; } }
+    changed seek-time => { root.settings-changed(); }
+    in property <bool> media-preview-ready;
+    in property <string> preview-size: "—";
+    in property <string> original-size;
+    in property <string> preview-details;
+    in property <string> recommendation;
+    in property <string> result-summary;
+    in property <string> export-label;
+    in property <bool> is-image;
+    in property <bool> is-webp;
+    in property <bool> lossy-image;
+    in property <bool> alpha-warning;
+    in property <bool> custom-tool;
+    in-out property <bool> conflict;
+    in-out property <bool> lossless;
+    in-out property <bool> allow-shrink;
+    in-out property <bool> lock-aspect: true;
+    in-out property <int> resize-mode;
+    in-out property <float> custom-quality: 80;
+    in-out property <string> resize-height;
+    in-out property <string> scale-value: "75";
+    in-out property <string> target-size;
+    in property <string> status: "Ready to go";
+    in property <string> status-details;
+    private property <bool> details-open;
+    changed status-details => { root.details-open = false; }
+    in property <string> preview-size-label: "Preview size";
+    in property <bool> status-error;
+    in property <string> tool-status: "Checking FFmpeg…";
+    in property <string> ffprobe-version;
+    in property <string> progress-label;
+    in property <bool> tools-ready;
+    in property <bool> tools-checked;
+    in property <bool> installing;
+    in property <bool> can-browse;
+    in property <bool> busy;
+    in property <bool> running;
+    in property <bool> cancelling;
+    in property <bool> output-ready;
+    changed output-ready => { reveal-result.running = root.output-ready; }
+    in property <bool> show-quality;
+    in property <bool> show-trim;
+    in property <bool> show-frames;
+    in-out property <bool> frame-series;
+    changed frame-series => { root.settings-changed(); }
+    in-out property <string> frame-interval: "1";
+    in property <bool> indeterminate;
+    in property <float> fraction;
+    in-out property <int> action-index: 0;
+    in-out property <int> format-index: 0;
+    in-out property <int> quality-index: 1;
+    in-out property <string> trim-start;
+    in-out property <string> trim-end;
+    in-out property <string> resize-width;
+
+    in-out property <bool> advanced-open;
+    changed active-tool => { workflow.content-y = 0px; }
+    changed search-query => { root.filter-tools(); }
+    changed category-index => { root.filter-tools(); }
+    changed suggested-only => { root.filter-tools(); }
+    private property <bool> target-enabled: lossy-image && !(is-webp && lossless);
+    changed trim-start => { root.settings-changed(); }
+    changed trim-end => { root.settings-changed(); }
+    changed quality-index => { root.settings-changed(); }
+    changed custom-quality => { root.settings-changed(); }
+    changed lossless => { root.settings-changed(); }
+    changed allow-shrink => { root.settings-changed(); }
+    changed lock-aspect => { root.settings-changed(); }
+    changed resize-mode => { root.settings-changed(); }
+    changed resize-width => { root.settings-changed(); }
+    changed resize-height => { root.settings-changed(); }
+    changed scale-value => { root.settings-changed(); }
+    changed target-size => { root.settings-changed(); }
+    changed destination-name => { root.conflict = false; }
+    private property <bool> locked: busy || running;
+
+    callback browse();
+    callback choose-tool(string);
+    callback filter-tools();
+    callback back-to-tools();
+    callback remove();
+    callback select-action();
+    callback select-format();
+    callback choose-destination();
+    callback export-file();
+    callback analyze();
+    callback open-media-preview();
+    callback listen-original();
+    callback preview-zoom();
+    callback keep-both();
+    callback settings-changed();
+    callback install-ffmpeg();
+    callback pick-ffmpeg();
+    callback reset-ffmpeg();
+    callback cancel-export();
+    callback open-folder();
+    callback open-export();
+    callback ffmpeg-guide();
+
+    title: "FFlume";
+    background: Theme.background;
+    default-font-family: Theme.body-font;
+    default-font-size: 14px;
+    preferred-width: 690px;
+    preferred-height: 770px;
+    min-width: 520px;
+    min-height: 440px;
+
+    function scroll-to-result() {
+        workflow.content-y = min(0px, workflow.visible-height - workflow.content-height);
+    }
+
+    // Wait for the result card and the progress bar to finish changing the layout.
+    reveal-result := Timer {
+        interval: 50ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            if root.output-ready { root.scroll-to-result(); }
+        }
+    }
+
+    VerticalLayout {
+        padding: 20px;
+        spacing: 14px;
+
+        HorizontalLayout {
+            spacing: 11px;
+            Image { source: @image-url("../assets/mark.svg"); width: 38px; height: 38px; }
+            VerticalLayout {
+                spacing: 1px;
+                horizontal-stretch: 1;
+                PixelText { text: "FFlume"; font-size: 25px; }
+                Detail { text: "Media, made simple."; font-size: 12px; }
+            }
+            if root.active-tool != "" : Button {
+                text: "Back to tools";
+                enabled: !root.locked;
+                clicked => { root.back-to-tools(); }
+            }
+
+        }
+
+        workflow := ScrollView {
+            horizontal-scrollbar-policy: always-off;
+            content-width: self.visible-width;
+            content-height: body.height;
+
+            body := VerticalLayout {
+                width: workflow.visible-width - 10px;
+                height: self.min-height;
+                spacing: 16px;
+                padding-bottom: root.output-ready ? 12px : 0px;
+
+                if root.source-profile != "PDF" && root.tools-checked && !root.tools-ready : Card {
+                    border-color: Theme.accent;
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 8px;
+                        Caption {
+                            text: root.installing ? "Installing FFmpeg…" : "FFmpeg isn’t available";
+                            color: Theme.text;
+                        }
+                        Detail {
+                            text: root.installing ? "Homebrew is installing FFmpeg and ffprobe." : "FFlume needs FFmpeg to process files. Install it or choose an existing installation.";
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Button { text: "Install FFmpeg"; enabled: !root.locked; clicked => { root.install-ffmpeg(); } }
+                            Button { text: "Choose FFmpeg"; enabled: !root.locked; clicked => { root.pick-ffmpeg(); } }
+                            Button {
+                                text: root.custom-tool ? "Use automatic setup" : "Check again";
+                                enabled: !root.locked;
+                                clicked => { root.reset-ffmpeg(); }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                        HorizontalLayout {
+                            Button { text: "Setup guide"; enabled: !root.locked; clicked => { root.ffmpeg-guide(); } }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                    }
+                }
+
+                if root.active-tool == "" : ToolsHome {
+                    file-name: root.file-name;
+                    file-details: root.file-details;
+                    file-kind: root.file-kind;
+                    pdf-setup-available: root.pdf-setup-available;
+                    pdf-installing: root.pdf-installing;
+                    install-pdf => { root.pdf-install(); }
+                    check-pdf => { root.pdf-check(); }
+                    can-import: root.can-browse && !root.locked;
+                    file-drops: root.file-drops;
+                    drag-hover: root.drag-hover;
+                    locked: root.locked;
+                    sections: root.tool-sections;
+                    categories: root.categories;
+                    query <=> root.search-query;
+                    category-index <=> root.category-index;
+                    suggested-only <=> root.suggested-only;
+                    browse => { root.browse(); }
+                    remove => { root.remove(); }
+                    choose(id) => { root.choose-tool(id); }
+                }
+
+                if root.active-tool != "" : PixelText {
+                    text: root.active-tool;
+                    color: Theme.text;
+                    font-size: 25px;
+                }
+
+                if root.active-tool != "" && root.source-profile == "PDF" : PdfPanel {
+                    ready: root.pdf-ready;
+                    checked: root.pdf-checked;
+                    installing: root.pdf-installing;
+                    locked: root.locked;
+                    file-name: root.pdf-name;
+                    page-count: root.pdf-page-count;
+                    preview-label: root.pdf-preview-label;
+                    can-previous: root.pdf-can-previous;
+                    can-next: root.pdf-can-next;
+                    preview-image: root.pdf-image;
+                    output-ready: root.pdf-output-ready;
+                    result-summary: root.pdf-result-summary;
+                    selection <=> root.pdf-selection;
+                    format-index <=> root.pdf-format-index;
+                    install => { root.pdf-install(); }
+                    check => { root.pdf-check(); }
+                    browse => { root.pdf-browse(); }
+                    preview => { root.pdf-preview(); }
+                    previous => { root.pdf-previous(); }
+                    next => { root.pdf-next(); }
+                    export-pages => { root.pdf-export(); }
+                    open-folder => { root.open-folder(); }
+                    open-export => { root.open-export(); }
+                }
+
+                if root.active-tool != "" && root.source-profile != "PDF" : SourcePanel {
+                    profile: root.source-profile;
+                    file-name: root.source-name;
+                    facts: root.source-facts;
+                    enabled: !root.locked && root.can-browse;
+                    locked: root.locked;
+                    drag-hover: root.drag-hover;
+                    can-drop: root.file-drops && root.can-browse;
+                    browse => { root.browse(); }
+                    remove => { root.remove(); }
+                }
+
+                if root.active-tool != "" && root.inspector && root.source-name != "" : Card {
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 10px;
+                        Caption { text: "File details"; color: Theme.text; }
+                        Readout { text: root.inspection; wrap: char-wrap; }
+                    }
+                }
+
+                if root.active-tool != "" && !root.inspector && root.source-name != "" && !root.can-process : Detail {
+                    text: root.input-hint;
+                    color: Theme.accent-hover;
+                }
+
+                if root.active-tool != "" && root.can-process && root.actions.length > 1 : VerticalLayout {
+                    spacing: 7px;
+                    Caption { text: "Choose an action"; }
+                    HorizontalLayout {
+                        spacing: 7px;
+                        for action[index] in root.actions : ActionTile {
+                            label: action;
+                            selected: root.action-index == index;
+                            enabled: !root.locked;
+                            horizontal-stretch: 1;
+                            clicked => { root.action-index = index; root.select-action(); }
+                        }
+                    }
+                }
+
+                if root.active-tool != "" && root.can-process : Card {
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 9px;
+                        Caption { text: "Quick settings"; color: Theme.text; }
+                        Detail { text: root.preview-details; }
+                        if root.recommendation != "" : Detail { text: root.recommendation; }
+                        HorizontalLayout {
+                            spacing: 12px;
+                            Detail { text: "Output format"; vertical-alignment: center; }
+                            if root.formats.length == 1 : Detail {
+                                text: root.formats[0];
+                                vertical-alignment: center;
+                            }
+                            if root.formats.length > 1 : ComboBox {
+                                model: root.formats;
+                                current-index <=> root.format-index;
+                                enabled: !root.locked;
+                                accessible-label: "Output format";
+                                selected => { root.select-format(); }
+                            }
+                        }
+                        if root.show-quality && (!root.is-image || root.target-enabled) : HorizontalLayout {
+                            spacing: 12px;
+                            Detail { text: "Quality"; vertical-alignment: center; }
+                            ComboBox {
+                                model: root.is-image ? ["High quality", "Balanced", "Smaller file", "Custom"] : ["High quality", "Balanced", "Smaller file"];
+                                current-index <=> root.quality-index;
+                                enabled: !root.locked && root.target-size == "";
+                                accessible-label: "Quality preset";
+                            }
+                        }
+                        if root.show-quality && (!root.is-image || root.target-enabled) : Detail {
+                            text: root.quality-index == 0 ? "Prioritize visual quality."
+                                : root.quality-index == 2 ? "Reduce size with more compression."
+                                : root.quality-index == 3 ? "Fine-tune the quality yourself."
+                                : "Balance file size and quality.";
+                        }
+                        if root.is-image && root.target-enabled && root.quality-index == 3 && root.target-size == "" : HorizontalLayout {
+                            spacing: 12px;
+                            Slider {
+                                minimum: 0; maximum: 100; step: 1;
+                                value <=> root.custom-quality;
+                                enabled: !root.locked;
+                                accessible-label: "Custom image quality";
+                            }
+                            Detail { text: "\{round(root.custom-quality)} / 100"; vertical-alignment: center; }
+                        }
+                        if root.is-image && root.resize-mode == 1 && root.lock-aspect : HorizontalLayout {
+                            spacing: 12px;
+                            Detail { text: "Width (px)"; vertical-alignment: center; }
+                            LineEdit { text <=> root.resize-width; enabled: !root.locked; accessible-label: "Output width in pixels"; }
+                        }
+                        if root.show-frames : CheckBox {
+                            text: "Extract at intervals";
+                            checked <=> root.frame-series;
+                            enabled: !root.locked;
+                        }
+                        if root.show-frames && root.frame-series : HorizontalLayout {
+                            spacing: 10px;
+                            Detail { text: "Interval (seconds)"; vertical-alignment: center; }
+                            LineEdit { text <=> root.frame-interval; accessible-label: "Frame interval in seconds"; enabled: !root.locked; }
+                        }
+                        if root.show-trim || root.show-frames : HorizontalLayout {
+                            spacing: 10px;
+                            VerticalLayout {
+                                spacing: 4px;
+                                Detail { text: root.show-frames && !root.frame-series ? "Frame time" : "Start"; }
+                                LineEdit {
+                                    text <=> root.trim-start;
+                                    placeholder-text: "Seconds or HH:MM:SS";
+                                    accessible-label: "Start time";
+                                    enabled: !root.locked;
+                                }
+                            }
+                            if !root.show-frames || root.frame-series : VerticalLayout {
+                                spacing: 4px;
+                                Detail { text: "End"; }
+                                LineEdit {
+                                    text <=> root.trim-end;
+                                    placeholder-text: "Seconds or HH:MM:SS";
+                                    accessible-label: "End time";
+                                    enabled: !root.locked;
+                                }
+                            }
+                        }
+                        if root.alpha-warning : Detail {
+                            text: "JPEG will fill transparent areas with a solid color.";
+                            color: Theme.accent-hover;
+                        }
+                        Detail { text: root.action-hint; color: Theme.muted; }
+                    }
+                }
+
+                if root.active-tool != "" && root.can-process && root.is-image : Card {
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 10px;
+                        HorizontalLayout {
+                            spacing: 10px;
+                            Caption { text: "Advanced settings"; horizontal-stretch: 1; color: Theme.text; }
+                            Button {
+                                text: root.advanced-open ? "Hide" : "Show";
+                                accessible-label: root.advanced-open ? "Hide advanced settings" : "Show advanced settings";
+                                clicked => { root.advanced-open = !root.advanced-open; }
+                            }
+                        }
+                        if root.advanced-open : VerticalLayout {
+                            spacing: 10px;
+                            if root.is-webp : CheckBox { text: "Lossless WebP"; checked <=> root.lossless; enabled: !root.locked; }
+                            Detail {
+                                text: root.target-enabled ? "Lossy encoding trades some detail for smaller files." : "Lossless encoding preserves image detail.";
+                            }
+                            HorizontalLayout {
+                                spacing: 12px;
+                                Detail { text: "Resolution"; vertical-alignment: center; }
+                                ComboBox {
+                                    model: ["Original dimensions", "Custom width", "Custom height", "Scale by percentage", "Maximum dimension"];
+                                    current-index <=> root.resize-mode;
+                                    enabled: !root.locked;
+                                    accessible-label: "Resolution mode";
+                                }
+                            }
+                            if root.resize-mode == 1 : CheckBox { text: "Keep proportions"; checked <=> root.lock-aspect; enabled: !root.locked; }
+                            if root.resize-mode == 1 && !root.lock-aspect : HorizontalLayout {
+                                spacing: 8px;
+                                Detail { text: "Width"; vertical-alignment: center; }
+                                LineEdit { text <=> root.resize-width; enabled: !root.locked; accessible-label: "Output width in pixels"; }
+                                Detail { text: "Height"; vertical-alignment: center; }
+                                LineEdit { text <=> root.resize-height; enabled: !root.locked; accessible-label: "Output height in pixels"; }
+                            }
+                            if root.resize-mode == 2 : HorizontalLayout {
+                                spacing: 8px;
+                                Detail { text: "Height (px)"; vertical-alignment: center; }
+                                LineEdit { text <=> root.resize-height; enabled: !root.locked; accessible-label: "Output height in pixels"; }
+                            }
+                            if root.resize-mode >= 3 : HorizontalLayout {
+                                spacing: 8px;
+                                Detail { text: root.resize-mode == 3 ? "Scale (%)" : "Longest side (px)"; vertical-alignment: center; }
+                                LineEdit {
+                                    text <=> root.scale-value;
+                                    enabled: !root.locked;
+                                    accessible-label: root.resize-mode == 3 ? "Scale percentage" : "Maximum dimension";
+                                }
+                            }
+                            if root.target-enabled : VerticalLayout {
+                                spacing: 8px;
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Detail { text: "Target size"; vertical-alignment: center; }
+                                    LineEdit {
+                                        text <=> root.target-size;
+                                        placeholder-text: "Optional, e.g. 500 KB";
+                                        accessible-label: "Target file size";
+                                        enabled: !root.locked;
+                                    }
+                                }
+                                CheckBox {
+                                    text: "Allow smaller dimensions to meet target";
+                                    checked <=> root.allow-shrink;
+                                    enabled: !root.locked && root.target-size != "";
+                                }
+                                if root.target-size != "" : Detail { text: "Very small targets may require smaller dimensions."; }
+                            }
+                        }
+                    }
+                }
+
+                preview-anchor := Rectangle { height: 0px; }
+                if root.active-tool != "" && root.can-process : Card {
+                    background: Theme.elevated;
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 8px;
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Caption { text: root.preview-enabled ? "Preview your result" : "Output summary"; color: Theme.text; horizontal-stretch: 1; }
+                            if root.preview-enabled : Button {
+                                text: root.preview-state == "Not generated" ? "Generate preview" : "Refresh preview";
+                                enabled: !root.locked && root.tools-ready;
+                                clicked => {
+                                    workflow.content-y = max(workflow.visible-height - workflow.content-height, -preview-anchor.y);
+                                    root.analyze();
+                                }
+                            }
+                        }
+                        if !root.preview-enabled : Detail { text: "Compatible tracks are copied without re-encoding."; }
+                        if root.preview-enabled : Detail {
+                            text: root.preview-state == "Outdated" ? "Settings changed. Refresh to see the latest result."
+                                : root.preview-state == "Generating" ? "Preparing your preview..."
+                                : root.preview-state == "Ready" ? "Preview is ready"
+                                : root.preview-state == "Failed" ? "Preview failed. Check the details or adjust your settings."
+                                : root.preview-state == "Canceled" ? "Preview canceled."
+                                : "See how your settings affect the final output.";
+                        }
+                        if root.show-timeline : VerticalLayout {
+                            spacing: 5px;
+                            Detail { text: root.timeline-duration; }
+                            if root.seek-limit > 0.05 : HorizontalLayout {
+                                spacing: 8px;
+                                Slider {
+                                    maximum: max(0.05, root.seek-limit - 0.05);
+                                    step: 0.05;
+                                    value <=> root.seek-time;
+                                    enabled: !root.locked;
+                                    accessible-label: "Preview timestamp in seconds";
+                                    adjusted => {
+                                        if root.show-frames && !root.frame-series {
+                                            root.trim-start = "\{round(self.value * 100) / 100}";
+                                        }
+                                    }
+                                }
+                                Readout { text: "\{round(root.seek-time * 100) / 100} s"; }
+
+                            }
+                        }
+                        if root.has-image-comparison || root.has-single-preview : VerticalLayout {
+                            spacing: 7px;
+                            HorizontalLayout {
+                                spacing: 6px;
+                                Button {
+                                    text: root.hidden-preview ? "Show preview" : "Hide preview";
+                                    clicked => { root.hidden-preview = !root.hidden-preview; }
+                                }
+                                if !root.hidden-preview : Button {
+                                    text: root.expanded-preview ? "Reduce" : "Expand";
+                                    clicked => { root.expanded-preview = !root.expanded-preview; }
+                                }
+                                if root.gif-frames.length > 1 && !root.hidden-preview : Button {
+                                    text: root.gif-playing ? "Pause" : "Play";
+                                    clicked => { root.gif-playing = !root.gif-playing; }
+                                }
+                                if root.has-image-comparison && !root.hidden-preview : Button {
+                                    text: "Reset divider";
+                                    clicked => { root.divider = 0.5; }
+                                }
+                            }
+                            if root.has-image-comparison && !root.hidden-preview : HorizontalLayout {
+                                spacing: 6px;
+                                Button { text: "Fit"; enabled: !root.locked && root.pixel-detail;
+                                    clicked => { root.detail-requested = false; } }
+                                Button { text: "100%"; enabled: !root.locked && !root.pixel-detail;
+                                    clicked => {
+                                        if root.detail-original.width > 0 { root.detail-requested = true; }
+                                        else { root.preview-zoom(); }
+                                    } }
+                                if root.is-image : Button { text: "Open full size"; enabled: !root.locked; clicked => { root.open-media-preview(); } }
+                                if root.pixel-detail : Detail { text: "Center detail at 100%"; vertical-alignment: center; }
+                            }
+                            if root.has-image-comparison && !root.hidden-preview : HorizontalLayout {
+                                Detail { text: "Original"; horizontal-stretch: 1; }
+                                Detail { text: "Processed"; }
+                            }
+                            if !root.hidden-preview : CompareView {
+                                height: root.expanded-preview ? 365px : 185px;
+                                original: root.pixel-detail ? root.detail-original : root.preview-original;
+                                processed: root.pixel-detail ? root.detail-converted
+                                    : root.gif-frames.length > root.gif-index
+                                        ? root.gif-frames[root.gif-index] : root.preview-converted;
+                                compare: root.has-image-comparison;
+                                pixel-detail: root.pixel-detail;
+                                pixel-scale: root.preview-pixel-scale;
+                                divider <=> root.divider;
+                            }
+                        }
+                        if root.media-preview-ready && root.gif-frames.length == 0 : HorizontalLayout {
+                            spacing: 8px;
+                            if root.audio-ab : Button { text: "A · Original"; enabled: !root.locked; clicked => { root.listen-original(); } }
+                            Button {
+                                text: root.audio-ab ? "B · Processed" : root.show-frames ? "Open frame" : "Play processed";
+                                enabled: !root.locked;
+                                clicked => { root.open-media-preview(); }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                        if root.media-preview-ready && root.gif-frames.length == 0 && !root.show-frames && !root.audio-ab : Detail {
+                            text: "Play or pause the sample in your system player. Export uses the full selection.";
+                        }
+                        Rectangle { height: 1px; background: Theme.border; }
+                        Readout { text: "Original size  " + root.original-size; }
+                        if root.preview-enabled : Readout {
+                            text: root.preview-size-label + "  " + root.preview-size;
+                            color: root.preview-state == "Ready" ? Theme.accent : Theme.text;
+                        }
+                        Detail { text: root.preview-details; }
+                        if root.media-preview-ready && root.preview-info != "" : Detail { text: root.preview-info; }
+                        if root.gif-frames.length > 0 : Detail {
+                            text: "Preview shows up to 10 seconds. A longer export can use a different color palette.";
+                        }
+                    }
+                }
+
+                if root.active-tool != "" && root.can-process : Card {
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 9px;
+                        Caption { text: "Save to"; color: Theme.text; }
+                        Detail { text: "Output folder"; font-size: 12px; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Rectangle {
+                                background: Theme.background;
+                                border-color: Theme.border;
+                                border-width: 1px;
+                                min-height: 34px;
+                                horizontal-stretch: 1;
+                                accessible-role: text;
+                                accessible-label: root.destination;
+                                Text {
+                                    x: 9px;
+                                    width: parent.width - 18px;
+                                    height: parent.height;
+                                    text: root.destination;
+                                    overflow: elide;
+                                    color: Theme.text;
+                                    font-size: 13px;
+                                    vertical-alignment: center;
+                                    accessible-role: none;
+                                }
+                            }
+                            Button { text: "Choose folder"; enabled: !root.locked; clicked => { root.choose-destination(); } }
+                        }
+                        Detail { text: root.show-frames && root.frame-series ? "Frame set name" : "File name"; font-size: 12px; }
+                        LineEdit { text <=> root.destination-name; enabled: !root.locked; accessible-label: "File name"; }
+                        if root.conflict : Detail { text: "Choose a different name or select another folder."; color: Theme.accent-hover; }
+                    }
+                }
+                if root.active-tool != "" && root.output-ready : Card {
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 8px;
+                        Caption { text: "Export result"; color: Theme.text; }
+                        Readout { text: root.result-summary; color: Theme.accent; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Button { text: "Open file"; enabled: !root.locked; clicked => { root.open-export(); } }
+                            Button { text: "Show in folder"; enabled: !root.locked; clicked => { root.open-folder(); } }
+                            Button { text: "Process another file"; enabled: !root.locked; clicked => { root.browse(); } }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.active-tool != "" && root.can-process : Card {
+            background: Theme.elevated;
+            HorizontalLayout {
+                padding: 10px;
+                spacing: 8px;
+                if root.preview-enabled : Button {
+                    text: "Preview";
+                    enabled: !root.locked;
+                    clicked => { workflow.content-y = max(workflow.visible-height - workflow.content-height, -preview-anchor.y); }
+                }
+                Readout {
+                    text: root.preview-size-label == "Measured size" ? root.preview-size : "";
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                if root.conflict : Button { text: "Keep both"; enabled: !root.locked; clicked => { root.keep-both(); } }
+                ActionTile {
+                    label: root.export-label;
+                    primary: true;
+                    enabled: root.tools-ready && !root.locked;
+                    clicked => { root.export-file(); }
+                }
+            }
+        }
+
+        if root.running : VerticalLayout {
+            spacing: 6px;
+            HorizontalLayout {
+                spacing: 8px;
+                Readout { text: root.progress-label; vertical-alignment: center; horizontal-stretch: 1; }
+                Button { text: "Cancel"; enabled: !root.cancelling; clicked => { root.cancel-export(); } }
+            }
+            ProgressIndicator { progress: root.fraction; indeterminate: root.indeterminate; accessible-label: root.preview-state == "Generating" ? "Preview progress" : "Processing progress"; }
+        }
+        if root.details-open && root.status-details != "" : ScrollView {
+            height: 80px;
+            horizontal-scrollbar-policy: always-off;
+            content-width: self.visible-width;
+            content-height: diagnostics.preferred-height;
+            diagnostics := Readout {
+                text: root.status-details;
+                width: parent.width;
+                wrap: char-wrap;
+            }
+        }
+        Rectangle { height: 1px; background: Theme.border; }
+        HorizontalLayout {
+            spacing: 10px;
+            Detail {
+                text: root.status;
+                color: root.status-error ? Theme.accent-hover : Theme.muted;
+                font-size: 12px;
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+                wrap: char-wrap;
+            }
+            if root.output-ready && root.status-details == "" && !root.status-error : Button {
+                text: "View result";
+                enabled: !root.locked;
+                clicked => { root.scroll-to-result(); }
+            }
+            if root.status-details != "" : Button {
+                text: root.details-open ? "Hide details" : "View details";
+                clicked => { root.details-open = !root.details-open; }
+            }
+            if root.tools-ready : VersionButton {
+                text: root.tool-status;
+                probe-version: root.ffprobe-version;
+                custom-tool: root.custom-tool;
+                choose-tool => { root.pick-ffmpeg(); }
+                reset-tool => { root.reset-ffmpeg(); }
+                enabled: !root.locked;
+            }
+            if !root.tools-ready : Readout {
+                text: root.tool-status;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
