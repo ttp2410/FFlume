@@ -1,78 +1,88 @@
-# FFlume
+<p align="center">
+  <img src="assets/mark.svg" alt="FFlume logo" width="64" height="64">
+</p>
 
-FFlume is a native desktop app for converting video, audio, images, and PDF pages. Browse the tools or open a file to see what you can do with it. Preview the result before you export.
+<h1 align="center">FFlume</h1>
 
-Built with Rust and Slint. FFmpeg and ffprobe handle media processing, and Poppler handles PDFs.
+<p align="center"><strong>Make every byte count.</strong></p>
+<p align="center">Convert, compress, and preview media in one lightweight desktop app.</p>
 
-| Tool dashboard | Before-and-after preview |
+<p align="center">
+  <a href="#installation"><strong>Get started</strong></a> ·
+  <a href="#features">Features</a> ·
+  <a href="#screenshots">Screenshots</a>
+</p>
+
+<p align="center">
+  <img src="docs/images/dashboard.jpg" alt="FFlume dashboard with a file picker, tool search, and categorized media tools" width="690">
+</p>
+
+## Why FFlume
+
+- **Compare before you export.** Drag the divider between the original and encoded image, then check the measured output size. For video compression, compare frames at the same timestamp.
+- **Choose a target file size.** Set a size for lossy JPEG or WebP and let FFlume try different quality settings.
+- **Preview the media you’re working with.** Play GIFs inside FFlume, open audio A/B samples in your system player, and preview PDF pages before exporting.
+
+## Features
+
+| Media | What you can do |
 | --- | --- |
-| <img src="docs/images/dashboard.jpg" alt="FFlume dashboard with a file picker, tool search, and categorized actions" width="420"> | <img src="docs/images/before-after.jpg" alt="FFlume comparing a source PNG with its encoded JPEG and showing the measured output size" width="420"> |
-
-## What you can do
-
-| Media | Tools |
-| --- | --- |
-| Video | Compress to H.264, convert between MP4 and MKV, trim, extract MP3 audio, create looping GIFs, or export individual frames and sequences. |
+| Video | Compress to H.264, convert between MP4 and MKV, trim clips, extract MP3 audio, make looping GIFs, and export frames. |
 | Audio | Convert to MP3, WAV, FLAC, or Opus. Trim clips and normalize loudness. |
-| Images | Convert to PNG, JPEG, or WebP. Resize by dimensions or scale, choose a quality preset, or target a file size for lossy JPEG and WebP. |
-| PDF | Preview pages and export individual pages, ranges, or the entire document as PNG or JPEG. |
+| Images | Convert to PNG, JPEG, or WebP. Resize by dimensions or scale, choose a quality preset, or set a target size for lossy JPEG and WebP. |
+| PDF | Preview pages and export selected pages, ranges, or the whole document as PNG or JPEG. Requires Poppler. |
 
-For images, drag the divider to compare the original with the encoded result. Use **Fit** to see the whole image or **100%** to inspect the center at native pixel scale. The preview reports the measured output size and shows when the result is larger. If the source and settings still match, FFlume can reuse the preview when you export.
+## Screenshots
 
-Video compression compares frames at the same timestamp. GIFs play in the preview panel, and audio A/B samples open in the system player. Fast video trim copies streams, so cuts can land near keyframes. If an output name already exists, **Keep both** saves a numbered copy.
+<p align="center">
+  <img src="docs/images/before-after.jpg" alt="Image comparison showing the original PNG, the encoded JPEG, and its measured size" width="600">
+</p>
 
-## Getting started on macOS
+*Image preview with a draggable comparison divider and measured output size.*
 
-Apple Silicon is the verified platform. To build locally, install [Rust 1.92 or newer](https://rustup.rs/), the Xcode Command Line Tools, and [Homebrew](https://brew.sh/).
+## Installation
+
+Verified on Apple Silicon Macs.
+
+### Homebrew
+
+Homebrew installation is coming soon. The [release checklist](docs/HOMEBREW_RELEASE.md) tracks what remains before the formula is published.
+
+### Build from source
+
+On macOS, install Rust 1.92 or newer and FFmpeg. The commands below use Homebrew to install the FFmpeg dependency.
 
 ```sh
-xcode-select --install  # Skip if the tools are already installed
+git clone https://github.com/ttp2410/FFlume.git
+cd FFlume
 brew install ffmpeg
-cargo run --locked
-```
-
-For a release build:
-
-```sh
 cargo build --release --locked
 ./target/release/fflume
 ```
 
-To make a local `FFlume.app` for testing, run `sh scripts/bundle-macos.sh` after the release build. Use `fflume --help` for command-line usage or `fflume --version` to check the installed version.
-
-### Homebrew release status
-
-The [source formula](homebrew-tap/Formula/fflume.rb) is prepared. Installation through a public tap is pending a tagged source archive and its checksum. Once the tap is published, replace `USERNAME` with the published tap owner. Homebrew builds FFlume from source using the Cargo lockfile and installs FFmpeg as a runtime dependency.
-
-```sh
-brew install USERNAME/tap/fflume
-fflume
-
-brew update
-brew upgrade USERNAME/tap/fflume
-brew uninstall USERNAME/tap/fflume
-```
-
-See the [Homebrew release checklist](docs/HOMEBREW_RELEASE.md) for publication and installation checks.
-
-### Optional format support
-
-- **WebP** requires an FFmpeg build with `libwebp`. If WebP is missing from the format list, click the FFmpeg version in the footer and use **Choose FFmpeg…** to select a compatible executable. Homebrew’s [ffmpeg-full](https://formulae.brew.sh/formula/ffmpeg-full) is one option.
-- **PDF** requires Poppler. Install it with `brew install poppler` or use **Install Poppler** in FFlume. PDF export renders pages with a 2400-pixel long edge.
+| Optional feature | Dependency |
+| --- | --- |
+| PDF export | Install Poppler with `brew install poppler` or use **Install Poppler** in FFlume. |
+| WebP export | Use an FFmpeg build with `libwebp`. To select one, click the FFmpeg version in the footer and choose **Choose FFmpeg…**. |
 
 ## Development
 
+FFlume uses Rust and Slint, FFmpeg and ffprobe for media, and Poppler for PDFs.
+
 ```sh
 cargo fmt --check
-cargo check --locked
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
 ```
 
-To run the full integration suite, install FFmpeg with `libwebp`, ffprobe, and Poppler, then run `cargo test --locked -- --include-ignored`. Set `FFLUME_TEST_FFMPEG` or `FFLUME_TEST_FFPROBE` to select specific executables. If your FFmpeg lacks WebP support, add `--skip ffmpeg_webp_export` after `--`.
+Run `cargo run --locked` for a development build. Run `sh scripts/bundle-macos.sh` after the build to create a local app bundle.
 
-The default renderer is Winit with FemtoVG. To try the software renderer, run `cargo run --release --no-default-features --features renderer-software`. See the [QA report](docs/FINAL_QA_REPORT.md) for the tested workflows and platform coverage.
+For integration test coverage and packaging instructions, see the [QA report](docs/FINAL_QA_REPORT.md) and the [Homebrew release checklist](docs/HOMEBREW_RELEASE.md).
 
-## License
+## Contributing
 
-FFlume is licensed under [GPL-3.0-only](LICENSE) and uses Slint under its GPL-3.0 option. The bundled Geist Pixel, Geist Sans, and Geist Mono fonts are from [Vercel’s Geist v1.9.2 release](https://github.com/vercel/geist-font/releases/tag/v1.9.2). See the [SIL Open Font License](assets/fonts/Geist-OFL.txt) and [original notice](assets/fonts/Geist-LICENSE.txt).
+Bug reports, feature suggestions, and pull requests are welcome. See the [contribution guide](CONTRIBUTING.md) for what to include and how to run checks.
+
+## License and acknowledgements
+
+FFlume is licensed under [GPL-3.0-only](LICENSE) and uses Slint under its GPL-3.0 option. Media processing uses FFmpeg and ffprobe, and PDF export uses Poppler. The bundled Geist Pixel, Geist Sans, and Geist Mono fonts are distributed under the [SIL Open Font License](assets/fonts/Geist-OFL.txt). See the [font copyright notice](assets/fonts/Geist-LICENSE.txt).
